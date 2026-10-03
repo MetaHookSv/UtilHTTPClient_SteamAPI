@@ -16,8 +16,9 @@ streaming requests to the host application.
 Download `UtilHTTPClient_SteamAPI-windows-x86.7z` from
 [GitHub Releases](https://github.com/MetaHookSv/UtilHTTPClient_SteamAPI/releases) (built on `v*` tag pushes).
 
-The archive holds `steam_api.dll` at its root, the client DLL and PDB, the consumer
-headers and the license files. Load the client DLL through `CreateInterface`, request
+The archive holds `steam_api.dll` at its root, the client DLL and PDB under
+`svencoop/metahook/dlls`, and the consumer headers under `include`. Load the client
+DLL through `CreateInterface`, request
 `UTIL_HTTPCLIENT_FACTORY_STEAMAPI_INTERFACE_VERSION`, then call `CreateUtilHTTPClient()`.
 This is a consumer-loaded utility DLL and needs no `plugins.lst` entry. The host must
 initialize Steamworks and keep dispatching Steam callbacks; deploy the bundled
@@ -44,5 +45,5 @@ to reuse local copies for offline builds.
 
 ## License
 
-MIT for the client code; each dependency keeps its own license. See [LICENSE](LICENSE)
-and the `licenses/` directory in the release archive.
+MIT for the client code; each dependency keeps its own license. See [LICENSE](LICENSE);
+dependency terms are documented in the upstream repositories.

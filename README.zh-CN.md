@@ -15,8 +15,8 @@
 从 [GitHub Releases](https://github.com/MetaHookSv/UtilHTTPClient_SteamAPI/releases)
 下载 `UtilHTTPClient_SteamAPI-windows-x86.7z`（由 `v*` 标签推送构建）。
 
-包内根目录为 `steam_api.dll`，并含客户端 DLL、PDB、公共头文件和许可证文件。
-加载客户端 DLL 的 `CreateInterface`，取得
+包内根目录为 `steam_api.dll`，`svencoop/metahook/dlls` 下为客户端 DLL 和 PDB，
+`include` 下为公共头文件。加载客户端 DLL 的 `CreateInterface`，取得
 `UTIL_HTTPCLIENT_FACTORY_STEAMAPI_INTERFACE_VERSION` 对应工厂，再调用
 `CreateUtilHTTPClient()`。此工具库由消费者加载，无需添加 `plugins.lst` 条目。
 宿主需初始化 Steamworks 并持续分发 Steam 回调；宿主未提供兼容运行库时，将随包的
@@ -41,5 +41,5 @@ ScopeExit；可通过 `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -D
 
 ## 许可证
 
-客户端代码采用 MIT；各依赖保留自身许可证，见 [LICENSE](LICENSE) 及发布包中的
-`licenses/` 目录。
+客户端代码采用 MIT；各依赖保留自身许可证，见 [LICENSE](LICENSE)，依赖条款请查阅
+各自上游仓库。
