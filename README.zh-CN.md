@@ -41,5 +41,5 @@ ScopeExit；可通过 `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -D
 
 ## 许可证
 
-客户端代码采用 MIT；各依赖保留自身许可证，见 [LICENSE](LICENSE) 和
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+客户端代码采用 MIT；各依赖保留自身许可证，见 [LICENSE](LICENSE) 及发布包中的
+`licenses/` 目录。

@@ -45,4 +45,4 @@ to reuse local copies for offline builds.
 ## License
 
 MIT for the client code; each dependency keeps its own license. See [LICENSE](LICENSE)
-and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+and the `licenses/` directory in the release archive.
