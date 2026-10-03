@@ -19,9 +19,9 @@ include("${VC_LTL_Root}/VC-LTL helper for cmake.cmake")
 
 add_library(SteamSDK::SteamAPI SHARED IMPORTED)
 set_target_properties(SteamSDK::SteamAPI PROPERTIES
-    IMPORTED_IMPLIB "${PROJECT_SOURCE_DIR}/thirdparty/SteamSDK/lib/steam_api.lib"
-    IMPORTED_LOCATION "${PROJECT_SOURCE_DIR}/thirdparty/SteamSDK/bin/steam_api.dll"
-    INTERFACE_INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/thirdparty/SteamSDK")
+    IMPORTED_IMPLIB "${STEAMSDK_SOURCE_PATH}/lib/steam_api.lib"
+    IMPORTED_LOCATION "${STEAMSDK_SOURCE_PATH}/bin/steam_api.dll"
+    INTERFACE_INCLUDE_DIRECTORIES "${STEAMSDK_SOURCE_PATH}")
 
 add_library(utilhttpclientsteamapi_settings INTERFACE)
 target_compile_features(utilhttpclientsteamapi_settings INTERFACE cxx_std_20)

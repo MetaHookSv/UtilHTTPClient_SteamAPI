@@ -1,6 +1,7 @@
 set(UTILHTTPCLIENT_STEAMAPI_DEPENDENCY_CACHE_DIR "${PROJECT_SOURCE_DIR}/thirdparty/cache" CACHE PATH "Downloaded binary dependency cache")
 set(METAHOOK_SOURCE_PATH "$ENV{METAHOOK_SOURCE_PATH}" CACHE PATH "MetaHook source tree; empty fetches the pinned SDK")
 set(SCOPEEXIT_SOURCE_PATH "$ENV{SCOPEEXIT_SOURCE_PATH}" CACHE PATH "ScopeExit source tree; empty fetches the pinned commit")
+set(STEAMSDK_SOURCE_PATH "$ENV{STEAMSDK_SOURCE_PATH}" CACHE PATH "SteamSDK source tree with steam/, lib/ and bin/; empty uses the bundled submodule")
 set(VC_LTL_Root "$ENV{VC_LTL_Root}" CACHE PATH "Existing VC-LTL binary package; empty downloads the verified package")
 
 function(utilhttpclientsteamapi_require_files name source)
@@ -23,12 +24,18 @@ function(utilhttpclientsteamapi_fetch_source name url commit out_var)
 endfunction()
 
 function(utilhttpclientsteamapi_prepare_dependencies)
-    set(steam_sdk "${PROJECT_SOURCE_DIR}/thirdparty/SteamSDK")
+    # SteamSDK may come from a shared external tree (STEAMSDK_SOURCE_PATH).
+    if(STEAMSDK_SOURCE_PATH)
+        get_filename_component(steam_sdk "${STEAMSDK_SOURCE_PATH}" ABSOLUTE BASE_DIR "${PROJECT_SOURCE_DIR}")
+    else()
+        set(steam_sdk "${PROJECT_SOURCE_DIR}/thirdparty/SteamSDK")
+    endif()
     foreach(required steam/steam_api.h lib/steam_api.lib bin/steam_api.dll STEAM-SDK-NOTICE.md)
         if(NOT EXISTS "${steam_sdk}/${required}")
-            message(FATAL_ERROR "SteamSDK submodule is missing ${required}. Run: git submodule update --init --recursive")
+            message(FATAL_ERROR "SteamSDK is missing ${required}: ${steam_sdk}. Set STEAMSDK_SOURCE_PATH or run: git submodule update --init --recursive")
         endif()
     endforeach()
+    set(STEAMSDK_SOURCE_PATH "${steam_sdk}" PARENT_SCOPE)
     set(metahook_files include/HLSDK/common/interface.h include/HLSDK/common/interface.cpp LICENSE)
     set(scopeexit_files include/ScopeExit/ScopeExit.h LICENSE)
     set(vcltl_files "VC-LTL helper for cmake.cmake" config/config.cmake
