@@ -67,4 +67,4 @@ endif()
 
 install(TARGETS UtilHTTPClient_SteamAPI RUNTIME DESTINATION svencoop/metahook/dlls)
 install(FILES "$<TARGET_PDB_FILE:UtilHTTPClient_SteamAPI>" DESTINATION svencoop/metahook/dlls)
-install(IMPORTED_RUNTIME_ARTIFACTS SteamSDK::SteamAPI RUNTIME DESTINATION .)
+# steam_api.dll is a host-provided runtime; the POST_BUILD copy only feeds local test runs.
