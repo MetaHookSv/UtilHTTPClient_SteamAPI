@@ -17,11 +17,7 @@ include(cmake/Dependencies.cmake)
 utilhttpclientsteamapi_prepare_dependencies()
 include("${VC_LTL_Root}/VC-LTL helper for cmake.cmake")
 
-add_library(SteamSDK::SteamAPI SHARED IMPORTED)
-set_target_properties(SteamSDK::SteamAPI PROPERTIES
-    IMPORTED_IMPLIB "${STEAMSDK_SOURCE_PATH}/lib/steam_api.lib"
-    IMPORTED_LOCATION "${STEAMSDK_SOURCE_PATH}/bin/steam_api.dll"
-    INTERFACE_INCLUDE_DIRECTORIES "${STEAMSDK_SOURCE_PATH}")
+include(cmake/SteamAPIBridge.cmake)
 
 add_library(utilhttpclientsteamapi_settings INTERFACE)
 target_compile_features(utilhttpclientsteamapi_settings INTERFACE cxx_std_20)
@@ -36,8 +32,8 @@ target_compile_options(utilhttpclientsteamapi_settings INTERFACE /W3 /permissive
 add_library(UtilHTTPClient_SteamAPI SHARED
     src/UtilHTTPClient_SteamAPI.cpp src/dllmain.cpp
     "${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp")
-target_link_libraries(UtilHTTPClient_SteamAPI PRIVATE utilhttpclientsteamapi_settings SteamSDK::SteamAPI)
-target_include_directories(UtilHTTPClient_SteamAPI PRIVATE "${SCOPEEXIT_SOURCE_PATH}/include")
+target_link_libraries(UtilHTTPClient_SteamAPI PRIVATE utilhttpclientsteamapi_settings SteamAPIBridge)
+target_include_directories(UtilHTTPClient_SteamAPI PRIVATE "${SCOPEEXIT_SOURCE_PATH}/include" "${STEAMSDK_SOURCE_PATH}")
 target_compile_definitions(UtilHTTPClient_SteamAPI PRIVATE UTILHTTPCLIENT_STEAMAPI_EXPORTS _USRDLL)
 target_compile_options(UtilHTTPClient_SteamAPI PRIVATE /MP /sdl $<$<CONFIG:Release>:/Gy;/Oi>)
 target_link_options(UtilHTTPClient_SteamAPI PRIVATE /DEBUG /SUBSYSTEM:WINDOWS /MANIFESTUAC:NO
@@ -47,7 +43,7 @@ set_target_properties(UtilHTTPClient_SteamAPI PROPERTIES
     DEBUG_POSTFIX "" INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 add_custom_command(TARGET UtilHTTPClient_SteamAPI POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        "$<TARGET_FILE:SteamSDK::SteamAPI>" "$<TARGET_FILE_DIR:UtilHTTPClient_SteamAPI>"
+        "$<TARGET_FILE:SteamAPIBridge>" "$<TARGET_FILE_DIR:UtilHTTPClient_SteamAPI>"
     VERBATIM)
 
 include(CTest)
@@ -60,11 +56,25 @@ if(BUILD_TESTING)
     add_dependencies(UtilHTTPClientSteamAPITests UtilHTTPClient_SteamAPI)
     foreach(scenario Factory Client Url)
         add_test(NAME ${scenario} COMMAND UtilHTTPClientSteamAPITests
-            "$<TARGET_FILE:UtilHTTPClient_SteamAPI>" "$<TARGET_FILE:SteamSDK::SteamAPI>" ${scenario})
+            "$<TARGET_FILE:UtilHTTPClient_SteamAPI>" "$<TARGET_FILE:SteamAPIBridge>" ${scenario})
         set_tests_properties(${scenario} PROPERTIES TIMEOUT 30)
     endforeach()
+    get_target_property(bridge_source SteamAPIBridge SOURCE_DIR)
+    add_library(UtilHTTPBridgeMock SHARED "${bridge_source}/tests/MockRuntime.cpp" "${bridge_source}/tests/Modern.def")
+    target_include_directories(UtilHTTPBridgeMock PRIVATE "${STEAMSDK_SOURCE_PATH}" "${bridge_source}/src")
+    target_compile_features(UtilHTTPBridgeMock PRIVATE cxx_std_20)
+    set_target_properties(UtilHTTPBridgeMock PROPERTIES OUTPUT_NAME steam_api
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mock"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mock")
+    add_executable(UtilHTTPBridgeTests tests/BridgeTests.cpp)
+    target_link_libraries(UtilHTTPBridgeTests PRIVATE utilhttpclientsteamapi_settings)
+    target_compile_options(UtilHTTPBridgeTests PRIVATE /UNDEBUG)
+    add_dependencies(UtilHTTPBridgeTests UtilHTTPClient_SteamAPI UtilHTTPBridgeMock)
+    add_test(NAME BridgeRequests COMMAND UtilHTTPBridgeTests
+        "$<TARGET_FILE:UtilHTTPClient_SteamAPI>" "$<TARGET_FILE:SteamAPIBridge>" "$<TARGET_FILE:UtilHTTPBridgeMock>")
+    set_tests_properties(BridgeRequests PROPERTIES TIMEOUT 30)
 endif()
 
 install(TARGETS UtilHTTPClient_SteamAPI RUNTIME DESTINATION svencoop/metahook/dlls)
 install(FILES "$<TARGET_PDB_FILE:UtilHTTPClient_SteamAPI>" DESTINATION svencoop/metahook/dlls)
-# steam_api.dll is a host-provided runtime; the POST_BUILD copy only feeds local test runs.
+# steam_api.dll is provided and initialized by the host, never installed here.

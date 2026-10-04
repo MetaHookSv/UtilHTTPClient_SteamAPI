@@ -55,7 +55,7 @@ flowchart TD
   E -->|yes| F[SteamHTTP CreateCookieContainer m_bAllowResponseToModifyCookie]
   C --> G[CreateSyncRequest / CreateAsyncRequest / CreateAsyncStreamRequest]
   G --> H[ParseUrlInternal -> CURLParsedResult]
-  H --> I[CUtilHTTPRequest: HTTPRequestHandle + CCallResult bindings]
+  H --> I[CUtilHTTPRequest: request handle + shared Bridge context]
   I --> J{Send}
   J -->|standard| K[SteamHTTP SendHTTPRequest]
   J -->|stream| L[SteamHTTP SendHTTPRequestAndStreamResponse]
@@ -71,11 +71,11 @@ flowchart TD
 Implementation layers (all in `src/UtilHTTPClient_SteamAPI.cpp`):
 
 - **Client**: `CUtilHTTPClient` optionally creates an `HTTPCookieContainerHandle` during `Init`
-  (`context->m_bUseCookieContainer`, with `m_bAllowResponseToModifyCookie` forwarded) and owns the
+  through SteamAPIBridge (`context->m_bUseCookieContainer`, with `m_bAllowResponseToModifyCookie` forwarded) and owns the
   request pool. Its `RunFrame()` does **not** pump Steam; it only walks the pool and destroys +
   erases requests that are `IsFinished()` and `IsAutoDestroyOnFinish()`.
-- **Request family**: `CUtilHTTPRequest` holds the `HTTPRequestHandle` and the Steam `CCallResult`
-  objects; its destructor cancels the `CallResult`, calls `ReleaseHTTPRequest` and then
+- **Request family**: `CUtilHTTPRequest` holds the request handle and a shared Bridge context;
+  its destructor releases the request (including callback cancellation) and then
   `m_Callbacks->Destroy()`. `CUtilHTTPSyncRequest` waits on a condition variable signalled by
   `OnSteamHTTPCompleted`; `CUtilHTTPAsyncRequest` defaults to auto-destroy and stubs the waiting
   API; `CUtilHTTPAsyncStreamRequest` uses `SendHTTPRequestAndStreamResponse` and forwards each
@@ -89,10 +89,9 @@ Implementation layers (all in `src/UtilHTTPClient_SteamAPI.cpp`):
 
 Behaviour worth knowing:
 
-- `Send()` issues `SteamHTTP()->SendHTTPRequest` and binds the header-received and completion
-  `CCallResult`s; it reports the `Requesting` state immediately. The streaming variant binds
-  `HTTPRequestHeadersReceived_t` (state `Responding`), `HTTPRequestDataReceived_t` (chunk callback)
-  and `HTTPRequestCompleted_t` (completion).
+- `Send()` uses SteamAPIBridge. Streaming headers/data are ordinary callbacks filtered by
+  request handle; completion is a call result. Immediate setup/send errors finish the request
+  and wake synchronous waiters. Completion does not require a preceding header callback.
 - The default `User-Agent` is a hard-coded Chrome UA; servers with UA-dependent policies need
   `SetField`.
 - Certificate verification is configurable per request (`SetRequireCertVerification`), and header,
@@ -100,10 +99,10 @@ Behaviour worth knowing:
 
 ## Dependencies
 
-- **Steamworks SDK**: `include/SteamSDK` and `steam_api.lib` from the `thirdparty/SteamSDK` git
-  submodule; the CMake target `SteamSDK::SteamAPI` is imported as a shared library and its runtime
-  DLL is installed at the archive root. The code depends on `steam_api.h`, `SteamHTTP()` and
-  `CCallResult<...>`.
+- **Steamworks SDK**: pinned read-only headers for local enum/event types; no steam_api.lib link.
+- **SteamAPIBridge**: shared DLL, sourced through `STEAMAPIBRIDGE_SOURCE_PATH` or a pinned
+  FetchContent commit. Resolves the host runtime dynamically; requires HTTP003 even on old
+  SteamClient012 hosts. Bridge owns native callback objects and translates events.
 - **MetaHook SDK**: the interface base and factory macros; `include/HLSDK/common/interface.cpp` is
   compiled into this DLL, so no host launcher is built or required.
 - **ScopeExit**: header-only RAII.
@@ -111,8 +110,8 @@ Behaviour worth knowing:
   `VC_LTL_Root` (SHA-256-verified VC-LTL 5.3.1 in `thirdparty/cache`). C++20, static MSVC CRT,
   Windows x86 only.
 - **Runtime host requirements**: the host must have initialized Steamworks and must keep dispatching
-  Steam callbacks (`SteamAPI_RunCallbacks()`); deploy the bundled `steam_api.dll` next to the game
-  executable when the host does not already supply a compatible runtime.
+  Steam callbacks (`SteamAPI_RunCallbacks()`). Install SteamAPIBridge next to the client DLL;
+  retain the game's own steam_api.dll.
 - **No game integration**: the library uses no engine gamedata and needs no `plugins.lst` entry —
   consumers load it through `CreateInterface`.
 
@@ -132,17 +131,14 @@ Behaviour worth knowing:
 
 `scripts/build-UtilHTTPClient_SteamAPI-x86-{Debug,Release}.bat` configures, builds, runs CTest and
 installs into `install/x86/<Configuration>/`, stopping on failure; `BUILD_TESTING` defaults to `ON`
-(`-DBUILD_TESTING=OFF` for a library-only build). Besides the SteamSDK submodule, the first
-configure fetches the MetaHook SDK and ScopeExit at pinned commits unless the
-`METAHOOK_SOURCE_PATH` / `SCOPEEXIT_SOURCE_PATH` / `VC_LTL_Root` overrides are supplied for offline
-builds.
+(`-DBUILD_TESTING=OFF` for a library-only build). The first configure fetches SteamSDK,
+SteamAPIBridge, MetaHook SDK and ScopeExit at pinned commits unless their `*_SOURCE_PATH`
+overrides are supplied; `VC_LTL_Root` reuses the verified VC-LTL binary package.
 Install output is `install/x86/<Configuration>/`:
 
 ```text
-steam_api.dll                                 (SteamSDK runtime, next to the game executable)
 svencoop/metahook/dlls/UtilHTTPClient_SteamAPI.dll + .pdb
-include/Interface/IUtilHTTPClient.h
-include/HLSDK/common/interface.h
+svencoop/metahook/dlls/SteamAPIBridge.dll + .pdb
 ```
 
 Nothing is deployed into a game automatically.
@@ -155,7 +151,7 @@ Nothing is deployed into a game automatically.
 - `CUtilHTTPResponse::GetResponseErrorMessage()` returns `m_ResponseErrorMessage`, which is never
   populated, so the message is always empty. Diagnose failures through `IsResponseError()`,
   `IsRequestSuccessful()` and `GetStatusCode()`; Steam provides no error detail.
-- A synchronous wait depends on the Steam callback pump: if the host stops calling
+- A successfully sent request's synchronous wait depends on the Steam callback pump: if the host stops calling
   `SteamAPI_RunCallbacks()`, `WaitForComplete()` can block forever. Another thread must keep pumping,
   or the caller must poll `IsFinished()`.
 - `CUtilHTTPAsyncRequest::WaitForComplete()` / `WaitForCompleteTimeout()` are stubs and
@@ -174,6 +170,22 @@ Nothing is deployed into a game automatically.
   `RunFrame()` from `HUD_Frame` (while the host's Steam callback pump keeps running).
 - Any Steam-hosted module can use the same factory/`Init`/`RunFrame` contract when libcurl is not
   available or not wanted.
+
+## SteamAPI compatibility boundary (2026-10-04)
+
+- Trigger: GoldSrc 8684's steam_api.dll lacks SteamInternal_ContextInit and
+  SteamInternal_FindOrCreateUserInterface, so modern accessor imports prevent DLL loading.
+- Constraint: historical HTTP002 headers gained cookie/certificate methods without a new
+  version string. Treating an arbitrary HTTP002 pointer as the current interface is unsafe.
+- Correct approach: link SteamAPIBridge; negotiate HTTP003 via modern SteamInternal or old
+  SteamClient012 user/pipe getters. Fail requests explicitly when HTTP003 is unavailable.
+  Streaming headers/data are ordinary callbacks, not completion call results.
+- Verification: Debug/Release scripts build, run 4 CTest scenarios and install. Bridge fixtures
+  exercise old/new exports, unavailable HTTP003, retry, event isolation and reentrant destruction.
+  Loader-only checks with real Half-Life, Sven Co-op and current SDK DLLs succeeded; no game
+  initialization, network request or real screenshot submission was performed.
+- Scope: this backend's existing _007 interface and its SteamAPIBridge dependency. Engine
+  compatibility of callers is independent.
 
 ## External documentation
 

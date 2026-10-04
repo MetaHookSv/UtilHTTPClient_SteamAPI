@@ -16,14 +16,15 @@ streaming requests to the host application.
 Download `UtilHTTPClient_SteamAPI-windows-x86.7z` from
 [GitHub Releases](https://github.com/MetaHookSv/UtilHTTPClient_SteamAPI/releases) (built on `v*` tag pushes).
 
-The archive holds `steam_api.dll` at its root, the client DLL and PDB under
-`svencoop/metahook/dlls`, and the consumer headers under `include`. Load the client
+The install tree holds the client and SteamAPIBridge DLL/PDB pairs under
+`svencoop/metahook/dlls`. Load the client
 DLL through `CreateInterface`, request
 `UTIL_HTTPCLIENT_FACTORY_STEAMAPI_INTERFACE_VERSION`, then call `CreateUtilHTTPClient()`.
 This is a consumer-loaded utility DLL and needs no `plugins.lst` entry. The host must
-initialize Steamworks and keep dispatching Steam callbacks; deploy the bundled
-`steam_api.dll` to the game executable directory when the host does not already supply
-a compatible runtime.
+initialize Steamworks and keep dispatching Steam callbacks. Its existing
+`steam_api.dll` is used without replacement. SteamAPIBridge requests HTTP003 on
+both modern runtimes and legacy SteamClient012 runtimes; unavailable HTTP or failed
+request setup/send completes the request with an error instead of waiting forever.
 
 ## Build
 
@@ -38,9 +39,10 @@ scripts\build-UtilHTTPClient_SteamAPI-x86-Release.bat
 
 Each build script configures, builds, runs CTest and installs into
 `install/x86/<Configuration>`, stopping on failure. `BUILD_TESTING` defaults to `ON`;
-use `-DBUILD_TESTING=OFF` for a library-only build. Besides the `thirdparty/SteamSDK`
-submodule, the first configure fetches the MetaHook SDK and ScopeExit at pinned
-commits; pass `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -DVC_LTL_Root=...`
+use `-DBUILD_TESTING=OFF` for a library-only build. The first configure fetches
+SteamSDK headers, SteamAPIBridge, MetaHook SDK and ScopeExit at pinned commits;
+pass `-DSTEAMAPIBRIDGE_SOURCE_PATH=... -DSTEAMSDK_SOURCE_PATH=...`
+and `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -DVC_LTL_Root=...`
 to reuse local copies for offline builds.
 
 ## License

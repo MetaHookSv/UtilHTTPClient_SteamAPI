@@ -16,6 +16,9 @@
 #include <ScopeExit/ScopeExit.h>
 
 #include <steam/steam_api.h>
+#include <SteamAPIBridge.h>
+
+using BridgeContext = std::shared_ptr<SteamBridgeContext>;
 
 EHTTPMethod UTIL_ConvertUtilHTTPMethodToSteamHTTPMethod(const UtilHTTPMethod method)
 {
@@ -176,8 +179,10 @@ class CUtilHTTPPayload : public IUtilHTTPPayload
 {
 private:
 	std::string m_payload;
+	SteamBridgeContextHandle m_Bridge;
 
 public:
+	explicit CUtilHTTPPayload(SteamBridgeContextHandle bridge) : m_Bridge(bridge) {}
 
 	const char* GetBytes() const
 	{
@@ -194,10 +199,10 @@ public:
 	bool ReadPayloadFromRequestHandle(HTTPRequestHandle handle)
 	{
 		uint32_t responseSize = 0;
-		if (SteamHTTP()->GetHTTPResponseBodySize(handle, &responseSize))
+		if (SteamBridge_HTTPGetBodySize(m_Bridge, handle, &responseSize) == SB_OK)
 		{
 			m_payload.resize(responseSize);
-			if (SteamHTTP()->GetHTTPResponseBodyData(handle, (uint8*)m_payload.data(), responseSize))
+			if (SteamBridge_HTTPGetBody(m_Bridge, handle, m_payload.data(), responseSize) == SB_OK)
 			{
 				return true;
 			}
@@ -211,6 +216,7 @@ public:
 class CUtilHTTPResponse : public IUtilHTTPResponse
 {
 private:
+	SteamBridgeContextHandle m_Bridge;
 	bool m_bResponseCompleted{};
 	bool m_bResponseError{};
 	bool m_bIsStreamPayload{};
@@ -239,7 +245,7 @@ public:
 		{
 			buf.resize(pResult->m_cBytesReceived, '\0');
 
-			if (SteamHTTP()->GetHTTPStreamingResponseBodyData(pResult->m_hRequest, pResult->m_cOffset,  (uint8*)buf.data(), pResult->m_cBytesReceived))
+			if (SteamBridge_HTTPGetStreamData(m_Bridge, pResult->m_hRequest, pResult->m_cOffset, buf.data(), pResult->m_cBytesReceived) == SB_OK)
 			{
 				return true;
 			}
@@ -253,7 +259,7 @@ public:
 		m_RequestHandle = pResult->m_hRequest;
 
 		m_bResponseCompleted = true;
-		m_bResponseError = bHasError;
+		m_bResponseError = bHasError || !pResult->m_bRequestSuccessful;
 		m_iResponseStatusCode = (int)pResult->m_eStatusCode;
 
 		if (pResult->m_bRequestSuccessful && !bHasError && !m_bIsStreamPayload)
@@ -263,7 +269,7 @@ public:
 	}
 
 public:
-	CUtilHTTPResponse() : m_pResponsePayload(new CUtilHTTPPayload())
+	explicit CUtilHTTPResponse(SteamBridgeContextHandle bridge) : m_Bridge(bridge), m_pResponsePayload(new CUtilHTTPPayload(bridge))
 	{
 
 	}
@@ -279,12 +285,12 @@ public:
 
 	bool GetHeaderSize(const char* name, size_t *buflen) override
 	{
-		return SteamHTTP()->GetHTTPResponseHeaderSize(m_RequestHandle, name, buflen);
+		return SteamBridge_HTTPGetHeaderSize(m_Bridge, m_RequestHandle, name, buflen) == SB_OK;
 	}
 
 	bool GetHeader(const char* name, char* buf, size_t buflen) override
 	{
-		return SteamHTTP()->GetHTTPResponseHeaderValue(m_RequestHandle, name, (uint8 *)buf, buflen);
+		return SteamBridge_HTTPGetHeader(m_Bridge, m_RequestHandle, name, buf, static_cast<uint32_t>(buflen)) == SB_OK;
 	}
 
 	const char* GetHeaderValue(const char* name) override
@@ -341,10 +347,18 @@ public:
 class CUtilHTTPRequest : public IUtilHTTPRequest
 {
 protected:
+	BridgeContext m_Bridge;
+	bool m_bSetupFailed{};
+	unsigned m_DispatchDepth{};
+	bool m_DestroyPending{};
+	struct DispatchScope
+	{
+		CUtilHTTPRequest* request;
+		explicit DispatchScope(CUtilHTTPRequest* value) : request(value) { ++request->m_DispatchDepth; }
+		~DispatchScope() { if (!--request->m_DispatchDepth && request->m_DestroyPending) delete request; }
+	};
 	UtilHTTPRequestId_t m_RequestId{ UTILHTTP_REQUEST_INVALID_ID };
 	HTTPRequestHandle m_RequestHandle{};
-	CCallResult<CUtilHTTPRequest, HTTPRequestHeadersReceived_t> m_HeaderReceivedCallResult{};
-	CCallResult<CUtilHTTPRequest, HTTPRequestCompleted_t> m_CompleteCallResult{};
 	bool m_bRequesting{};
 	bool m_bResponding{};
 	bool m_bRequestSuccessful{};
@@ -362,9 +376,11 @@ public:
 		bool secure,
 		const std::string& target,
 		IUtilHTTPCallbacks* callbacks,
-		HTTPCookieContainerHandle hCookieHandle) :
+		HTTPCookieContainerHandle hCookieHandle, BridgeContext bridge, bool cookieFailed) :
+		m_Bridge(std::move(bridge)),
+		m_bSetupFailed(cookieFailed),
 		m_Callbacks(callbacks),
-		m_pResponse(new CUtilHTTPResponse())
+		m_pResponse(new CUtilHTTPResponse(m_Bridge.get()))
 	{
 		std::string field_host = host;
 
@@ -379,29 +395,22 @@ public:
 
 		std::string url = std::format("{0}://{1}{2}", secure ? "https" :"http", field_host, target);
 
-		m_RequestHandle = SteamHTTP()->CreateHTTPRequest(UTIL_ConvertUtilHTTPMethodToSteamHTTPMethod(method), url.c_str());
+		if (SteamBridge_HTTPCreate(m_Bridge.get(), UTIL_ConvertUtilHTTPMethodToSteamHTTPMethod(method), url.c_str(), &m_RequestHandle) != SB_OK)
+			m_bSetupFailed = true;
 
 		if(hCookieHandle != INVALID_HTTPCOOKIE_HANDLE)
-			SteamHTTP()->SetHTTPRequestCookieContainer(m_RequestHandle, hCookieHandle);
+			if (SteamBridge_HTTPSetCookies(m_Bridge.get(), m_RequestHandle, hCookieHandle) != SB_OK)
+				m_bSetupFailed = true;
 
 		SetField("Host", field_host.c_str());
 		SetField("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.105 Safari/537.36");
 	}
 
-	~CUtilHTTPRequest()
+	virtual ~CUtilHTTPRequest()
 	{
-		if (m_HeaderReceivedCallResult.IsActive())
-		{
-			m_HeaderReceivedCallResult.Cancel();
-		}
-		if (m_CompleteCallResult.IsActive())
-		{
-			m_CompleteCallResult.Cancel();
-		}
-
 		if (m_RequestHandle != INVALID_HTTPREQUEST_HANDLE)
 		{
-			SteamHTTP()->ReleaseHTTPRequest(m_RequestHandle);
+			SteamBridge_HTTPRelease(m_Bridge.get(), m_RequestHandle);
 			m_RequestHandle = INVALID_HTTPREQUEST_HANDLE;
 		}
 
@@ -410,6 +419,7 @@ public:
 			m_Callbacks->Destroy();
 			m_Callbacks = nullptr;
 		}
+		delete m_pResponse;
 	}
 
 	virtual void OnRespondStart()
@@ -428,9 +438,10 @@ public:
 
 	virtual void OnRespondFinish()
 	{
-		if (m_bResponding)
+		if (!m_bFinished)
 		{
 			m_bFinished = true;
+			m_bRequesting = false;
 			m_bResponding = false;
 
 			if (m_Callbacks)
@@ -447,40 +458,75 @@ public:
 
 	virtual void OnSteamHTTPCompleted(HTTPRequestCompleted_t* pResult, bool bHasError)
 	{
-		m_bRequestSuccessful = pResult->m_bRequestSuccessful;
+		if (m_bFinished)
+			return;
+		m_bRequestSuccessful = pResult->m_bRequestSuccessful && !bHasError;
 
 		m_pResponse->OnSteamHTTPCompleted(pResult, bHasError);
 
+		OnRespondFinish();
 		if (m_Callbacks)
 		{
 			m_Callbacks->OnResponseComplete(this, m_pResponse);
 		}
+	}
 
-		OnRespondFinish();
+	virtual void OnSteamHTTPDataReceived(HTTPRequestDataReceived_t*, bool) {}
+
+	static void __cdecl OnBridgeEvent(void* opaque, const SteamBridgeHTTPEvent* event)
+	{
+		auto self = static_cast<CUtilHTTPRequest*>(opaque);
+		DispatchScope dispatch(self);
+		if (self->m_bFinished || self->m_DestroyPending)
+			return;
+		if (event->kind == SB_HTTP_HEADERS)
+		{
+			HTTPRequestHeadersReceived_t value{}; value.m_hRequest = event->request;
+			self->OnSteamHTTPHeaderReceived(&value, event->ioFailure != 0);
+		}
+		else if (event->kind == SB_HTTP_DATA)
+		{
+			HTTPRequestDataReceived_t value{}; value.m_hRequest = event->request;
+			value.m_cOffset = event->offset; value.m_cBytesReceived = event->bytes;
+			self->OnSteamHTTPDataReceived(&value, event->ioFailure != 0);
+		}
+		else if (event->kind == SB_HTTP_COMPLETE)
+		{
+			HTTPRequestCompleted_t value{}; value.m_hRequest = event->request;
+			value.m_bRequestSuccessful = event->successful != 0;
+			value.m_eStatusCode = static_cast<EHTTPStatusCode>(event->statusCode);
+			self->OnSteamHTTPCompleted(&value, event->ioFailure != 0);
+		}
 	}
 
 public:
 
 	void Destroy() override
 	{
-		delete this;
+		if (m_DispatchDepth)
+			m_DestroyPending = true;
+		else
+			delete this;
 	}
 
 	void Send() override
 	{
-		SteamAPICall_t SteamApiCall;
-
-		if (SteamHTTP()->SendHTTPRequest(m_RequestHandle, &SteamApiCall))
-		{
-			m_CompleteCallResult.Set(SteamApiCall, this, &CUtilHTTPRequest::OnSteamHTTPCompleted);
-			m_HeaderReceivedCallResult.Set(SteamApiCall, this, &CUtilHTTPRequest::OnSteamHTTPHeaderReceived);
-		}
-
+		DispatchScope dispatch(this);
+		if (m_bRequesting || m_bResponding || m_bFinished)
+			return;
 		m_bRequesting = true;
 
 		if (m_Callbacks)
 		{
 			m_Callbacks->OnUpdateState(this, m_pResponse, UtilHTTPRequestState::Requesting);
+		}
+		if (m_DestroyPending)
+			return;
+		if (m_bSetupFailed || SteamBridge_HTTPSend(m_Bridge.get(), m_RequestHandle, IsStream(), OnBridgeEvent, this) != SB_OK)
+		{
+			HTTPRequestCompleted_t failure{};
+			failure.m_hRequest = m_RequestHandle;
+			OnSteamHTTPCompleted(&failure, true);
 		}
 	}
 
@@ -540,7 +586,8 @@ public:
 
 	void SetTimeout(int secs) override
 	{
-		SteamHTTP()->SetHTTPRequestNetworkActivityTimeout(m_RequestHandle, secs);
+		if (secs <= 0 || SteamBridge_HTTPSetTimeout(m_Bridge.get(), m_RequestHandle, secs) != SB_OK)
+			m_bSetupFailed = true;
 	}
 
 	void SetPostBody(const char* contentType, const char* payload, size_t payloadSize) override
@@ -548,17 +595,20 @@ public:
 		if (!contentType)
 			contentType = "application/octet-stream";
 
-		SteamHTTP()->SetHTTPRequestRawPostBody(m_RequestHandle, contentType, (uint8_t *)payload, payloadSize);
+		if (SteamBridge_HTTPSetBody(m_Bridge.get(), m_RequestHandle, contentType, payload, static_cast<uint32_t>(payloadSize)) != SB_OK)
+			m_bSetupFailed = true;
 	}
 
 	void SetField(const char* field, const char* value) override
 	{
-		SteamHTTP()->SetHTTPRequestHeaderValue(m_RequestHandle, field, value);
+		if (SteamBridge_HTTPSetHeader(m_Bridge.get(), m_RequestHandle, field, value) != SB_OK)
+			m_bSetupFailed = true;
 	}
 
 	void SetRequireCertVerification(bool b) override
 	{
-		SteamHTTP()->SetHTTPRequestRequiresVerifiedCertificate(m_RequestHandle, b);
+		if (SteamBridge_HTTPSetCertificateVerification(m_Bridge.get(), m_RequestHandle, b) != SB_OK)
+			m_bSetupFailed = true;
 	}
 
 	void SetFollowLocation(bool b) override
@@ -582,8 +632,8 @@ public:
 		bool secure,
 		const std::string& target,
 		IUtilHTTPCallbacks* callbacks,
-		HTTPCookieContainerHandle hCookieHandle) :
-		CUtilHTTPRequest(method, host, port, secure, target, callbacks, hCookieHandle)
+		HTTPCookieContainerHandle hCookieHandle, BridgeContext bridge, bool cookieFailed) :
+		CUtilHTTPRequest(method, host, port, secure, target, callbacks, hCookieHandle, std::move(bridge), cookieFailed)
 	{
 	}
 
@@ -639,8 +689,8 @@ public:
 		bool secure,
 		const std::string& target,
 		IUtilHTTPCallbacks* callbacks,
-		HTTPCookieContainerHandle hCookieHandle) :
-		CUtilHTTPRequest(method, host, port, secure, target, callbacks, hCookieHandle)
+		HTTPCookieContainerHandle hCookieHandle, BridgeContext bridge, bool cookieFailed) :
+		CUtilHTTPRequest(method, host, port, secure, target, callbacks, hCookieHandle, std::move(bridge), cookieFailed)
 	{
 		m_bAutoDestroyOnFinish = true;
 	}
@@ -673,11 +723,6 @@ public:
 
 class CUtilHTTPAsyncStreamRequest : public CUtilHTTPAsyncRequest
 {
-private:
-	CCallResult<CUtilHTTPAsyncStreamRequest, HTTPRequestCompleted_t> m_StreamCompleteCallResult{};
-	CCallResult<CUtilHTTPAsyncStreamRequest, HTTPRequestHeadersReceived_t> m_HeaderReceivedCallResult{};
-	CCallResult<CUtilHTTPAsyncStreamRequest, HTTPRequestDataReceived_t> m_DataReceivedCallResult{};
-
 public:
 	CUtilHTTPAsyncStreamRequest(
 		const UtilHTTPMethod method,
@@ -686,26 +731,10 @@ public:
 		bool secure,
 		const std::string& target,
 		IUtilHTTPCallbacks* StreamCallbacks,
-		HTTPCookieContainerHandle hCookieHandle) :
-		CUtilHTTPAsyncRequest(method, host, port, secure, target, StreamCallbacks, hCookieHandle)
+		HTTPCookieContainerHandle hCookieHandle, BridgeContext bridge, bool cookieFailed) :
+		CUtilHTTPAsyncRequest(method, host, port, secure, target, StreamCallbacks, hCookieHandle, std::move(bridge), cookieFailed)
 	{
 		m_pResponse->SetStreamPayload(true);
-	}
-
-	~CUtilHTTPAsyncStreamRequest()
-	{
-		if (m_StreamCompleteCallResult.IsActive())
-		{
-			m_StreamCompleteCallResult.Cancel();
-		}
-		if (m_HeaderReceivedCallResult.IsActive())
-		{
-			m_HeaderReceivedCallResult.Cancel();
-		}
-		if (m_DataReceivedCallResult.IsActive())
-		{
-			m_DataReceivedCallResult.Cancel();
-		}
 	}
 
 	bool IsStream() const override
@@ -718,10 +747,15 @@ public:
 		OnRespondStart();
 	}
 
-	void OnSteamHTTPDataReceived(HTTPRequestDataReceived_t* pResult, bool bHasError)
+	void OnSteamHTTPDataReceived(HTTPRequestDataReceived_t* pResult, bool bHasError) override
 	{
 		std::string buf;
-		m_pResponse->OnSteamHTTPDataReceived(pResult, bHasError, buf);
+		if (!m_pResponse->OnSteamHTTPDataReceived(pResult, bHasError, buf))
+		{
+			HTTPRequestCompleted_t failure{}; failure.m_hRequest = m_RequestHandle;
+			OnSteamHTTPCompleted(&failure, true);
+			return;
+		}
 
 		if (m_Callbacks)
 		{
@@ -734,70 +768,13 @@ public:
 		}
 	}
 
-	void OnSteamHTTPCompleted(HTTPRequestCompleted_t* pResult, bool bHasError) override
-	{
-		m_bRequestSuccessful = pResult->m_bRequestSuccessful;
-
-		m_pResponse->OnSteamHTTPCompleted(pResult, bHasError);
-
-		if (m_Callbacks)
-		{
-			m_Callbacks->OnResponseComplete(this, m_pResponse);
-		}
-
-		OnRespondFinish();
-	}
-
-	void OnRespondStart() override
-	{
-		if (!m_bResponding)
-		{
-			m_bRequesting = false;
-			m_bResponding = true;
-
-			if (m_Callbacks)
-			{
-				m_Callbacks->OnUpdateState(this, m_pResponse, UtilHTTPRequestState::Responding);
-			}
-		}
-	}
-
-	void OnRespondFinish() override
-	{
-		if (m_bResponding)
-		{
-			m_bFinished = true;
-			m_bResponding = false;
-
-			if (m_Callbacks)
-			{
-				m_Callbacks->OnUpdateState(this, m_pResponse, UtilHTTPRequestState::Finished);
-			}
-		}
-	}
-
-	void Send() override
-	{
-		SteamAPICall_t SteamApiCall;
-		if (SteamHTTP()->SendHTTPRequestAndStreamResponse(m_RequestHandle, &SteamApiCall))
-		{
-			m_StreamCompleteCallResult.Set(SteamApiCall, this, &CUtilHTTPAsyncStreamRequest::OnSteamHTTPCompleted);
-			m_HeaderReceivedCallResult.Set(SteamApiCall, this, &CUtilHTTPAsyncStreamRequest::OnSteamHTTPHeaderReceived);
-			m_DataReceivedCallResult.Set(SteamApiCall, this, &CUtilHTTPAsyncStreamRequest::OnSteamHTTPDataReceived);
-		}
-
-		m_bRequesting = true;
-
-		if (m_Callbacks)
-		{
-			m_Callbacks->OnUpdateState(this, m_pResponse, UtilHTTPRequestState::Requesting);
-		}
-	}
 };
 
 class CUtilHTTPClient : public IUtilHTTPClient
 {
 private:
+	BridgeContext m_Bridge{ SteamBridge_CreateContext(), SteamBridge_DestroyContext };
+	bool m_bCookieFailed{};
 	std::mutex m_RequestHandleLock;
 	UtilHTTPRequestId_t m_RequestUsedId{ UTILHTTP_REQUEST_START_ID };
 	std::unordered_map<UtilHTTPRequestId_t, IUtilHTTPRequest*> m_RequestPool;
@@ -807,9 +784,10 @@ public:
 
 	~CUtilHTTPClient()
 	{
+		Shutdown();
 		if (m_CookieHandle)
 		{
-			SteamHTTP()->ReleaseCookieContainer(m_CookieHandle);
+			SteamBridge_HTTPReleaseCookies(m_Bridge.get(), m_CookieHandle);
 			m_CookieHandle = INVALID_HTTPCOOKIE_HANDLE;
 		}
 	}
@@ -821,24 +799,27 @@ public:
 
 	void Init(const CUtilHTTPClientCreationContext* context) override
 	{
+		if (m_CookieHandle)
+			SteamBridge_HTTPReleaseCookies(m_Bridge.get(), m_CookieHandle);
+		m_CookieHandle = INVALID_HTTPCOOKIE_HANDLE;
+		m_bCookieFailed = false;
 		if (context->m_bUseCookieContainer)
 		{
-			m_CookieHandle = SteamHTTP()->CreateCookieContainer(context->m_bAllowResponseToModifyCookie);
+			m_bCookieFailed = SteamBridge_HTTPCreateCookies(m_Bridge.get(), context->m_bAllowResponseToModifyCookie, &m_CookieHandle) != SB_OK;
 		}
 	}
 
 	void Shutdown() override
 	{
-		std::lock_guard<std::mutex> lock(m_RequestHandleLock);
-
-		for (auto itor = m_RequestPool.begin(); itor != m_RequestPool.end(); itor ++)
+		decltype(m_RequestPool) requests;
 		{
-			auto RequestInstance = (*itor).second;
-
-			RequestInstance->Destroy();
+			std::lock_guard<std::mutex> lock(m_RequestHandleLock);
+			requests.swap(m_RequestPool);
 		}
-
-		m_RequestPool.clear();
+		for (auto& [id, request] : requests)
+		{
+			request->Destroy();
+		}
 	}
 
 	void RunFrame() override
@@ -869,12 +850,12 @@ public:
 
 	IUtilHTTPRequest* CreateSyncRequestEx(const char* host, unsigned short port_us, const char* target, bool secure, const UtilHTTPMethod method, IUtilHTTPCallbacks* callback)
 	{
-		return new CUtilHTTPSyncRequest(method, host, port_us, secure, target, callback, m_CookieHandle);
+		return new CUtilHTTPSyncRequest(method, host, port_us, secure, target, callback, m_CookieHandle, m_Bridge, m_bCookieFailed);
 	}
 
 	IUtilHTTPRequest* CreateAsyncRequestEx(const char * host, unsigned short port_us, const char* target, bool secure, const UtilHTTPMethod method, IUtilHTTPCallbacks* callback)
 	{
-		return new CUtilHTTPAsyncRequest(method, host, port_us, secure, target, callback, m_CookieHandle);
+		return new CUtilHTTPAsyncRequest(method, host, port_us, secure, target, callback, m_CookieHandle, m_Bridge, m_bCookieFailed);
 	}
 
 	IUtilHTTPRequest* CreateSyncRequest(const char* url, const UtilHTTPMethod method, IUtilHTTPCallbacks* callbacks) override
@@ -903,7 +884,7 @@ public:
 
 	IUtilHTTPRequest* CreateAsyncStreamRequestEx(const char* host, unsigned short port_us, const char* target, bool secure, const UtilHTTPMethod method, IUtilHTTPCallbacks* callback)
 	{
-		return new CUtilHTTPAsyncStreamRequest(method, host, port_us, secure, target, callback, m_CookieHandle);
+		return new CUtilHTTPAsyncStreamRequest(method, host, port_us, secure, target, callback, m_CookieHandle, m_Bridge, m_bCookieFailed);
 	}
 
 	IUtilHTTPRequest* CreateAsyncStreamRequest(const char* url, const UtilHTTPMethod method, IUtilHTTPCallbacks* callbacks) override
@@ -972,7 +953,7 @@ public:
 	{
 		if (m_CookieHandle != INVALID_HTTPCOOKIE_HANDLE)
 		{
-			return SteamHTTP()->SetCookie(m_CookieHandle, host, url, cookie);
+			return SteamBridge_HTTPSetCookie(m_Bridge.get(), m_CookieHandle, host, url, cookie) == SB_OK;
 		}
 
 		return false;

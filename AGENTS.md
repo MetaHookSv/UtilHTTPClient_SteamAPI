@@ -34,14 +34,14 @@ This file provides guidance and important rules working with code in this reposi
 
 #### When notes are insufficient: source entry points (query and read on demand)
 
-- Build: `CMakeLists.txt` (including the `SteamSDK::SteamAPI` imported target), `cmake/`,
+- Build: `CMakeLists.txt` (links the shared `SteamAPIBridge` target), `cmake/`,
   `scripts/build-UtilHTTPClient_SteamAPI-x86-{Debug,Release}.bat`
 - Library sources: `src/UtilHTTPClient_SteamAPI.cpp` (client, request family, response family, URL
   parsing and the exports at the end of the file), `src/dllmain.cpp`
 - Public API / interface: `include/Interface/IUtilHTTPClient.h` — shared with the libcurl backend,
   so a change here affects both repositories
-- Steamworks: `thirdparty/SteamSDK` (git submodule; clone with `--recurse-submodules`), consumed as
-  `steam_api.h` plus `steam_api.lib`
+- Steamworks: read-only `STEAMSDK_SOURCE_PATH` headers; SteamAPIBridge resolves the host runtime.
+  `STEAMAPIBRIDGE_SOURCE_PATH` overrides the bridge's fixed FetchContent commit. No steam_api.lib link.
 - Tests: `tests/SmokeTests.cpp`, run by CTest (`BUILD_TESTING` defaults to `ON` in the scripts)
 - Docs: `README.md`, `README.zh-CN.md`; dependency terms live in the upstream repositories
 - External sources, all read-only inputs: `METAHOOK_SOURCE_PATH`, `SCOPEEXIT_SOURCE_PATH` and

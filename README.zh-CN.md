@@ -15,12 +15,13 @@
 从 [GitHub Releases](https://github.com/MetaHookSv/UtilHTTPClient_SteamAPI/releases)
 下载 `UtilHTTPClient_SteamAPI-windows-x86.7z`（由 `v*` 标签推送构建）。
 
-包内根目录为 `steam_api.dll`，`svencoop/metahook/dlls` 下为客户端 DLL 和 PDB，
-`include` 下为公共头文件。加载客户端 DLL 的 `CreateInterface`，取得
+安装目录的 `svencoop/metahook/dlls` 下包含客户端和 SteamAPIBridge 的 DLL/PDB。
+加载客户端 DLL 的 `CreateInterface`，取得
 `UTIL_HTTPCLIENT_FACTORY_STEAMAPI_INTERFACE_VERSION` 对应工厂，再调用
 `CreateUtilHTTPClient()`。此工具库由消费者加载，无需添加 `plugins.lst` 条目。
-宿主需初始化 Steamworks 并持续分发 Steam 回调；宿主未提供兼容运行库时，将随包的
-`steam_api.dll` 放到游戏可执行文件目录。
+宿主需初始化 Steamworks 并持续分发 Steam 回调；Bridge 使用游戏已有的
+`steam_api.dll`，不替换该文件。新版运行库和旧 SteamClient012 路径都请求 HTTP003；
+HTTP 不可用或请求设置、发送失败时，请求以错误结束，不会永久等待。
 
 ## 构建
 
@@ -35,8 +36,9 @@ scripts\build-UtilHTTPClient_SteamAPI-x86-Release.bat
 
 每个构建脚本依次配置、构建、执行 CTest 并安装到 `install/x86/<Configuration>`，
 失败立即退出。`BUILD_TESTING` 默认开启，`-DBUILD_TESTING=OFF` 可只构建库。
-除 `thirdparty/SteamSDK` 子模块外，首次配置还会按固定提交获取 MetaHook SDK 和
-ScopeExit；可通过 `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -DVC_LTL_Root=...`
+首次配置按固定提交获取 SteamSDK 头文件、SteamAPIBridge、MetaHook SDK 和
+ScopeExit；可通过 `-DSTEAMAPIBRIDGE_SOURCE_PATH=... -DSTEAMSDK_SOURCE_PATH=...`，以及
+`-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -DVC_LTL_Root=...`
 复用本地副本进行离线构建。
 
 ## 许可证

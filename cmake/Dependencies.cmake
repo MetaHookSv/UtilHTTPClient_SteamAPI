@@ -1,7 +1,7 @@
 set(UTILHTTPCLIENT_STEAMAPI_DEPENDENCY_CACHE_DIR "${PROJECT_SOURCE_DIR}/thirdparty/cache" CACHE PATH "Downloaded binary dependency cache")
 set(METAHOOK_SOURCE_PATH "$ENV{METAHOOK_SOURCE_PATH}" CACHE PATH "MetaHook source tree; empty fetches the pinned SDK")
 set(SCOPEEXIT_SOURCE_PATH "$ENV{SCOPEEXIT_SOURCE_PATH}" CACHE PATH "ScopeExit source tree; empty fetches the pinned commit")
-set(STEAMSDK_SOURCE_PATH "$ENV{STEAMSDK_SOURCE_PATH}" CACHE PATH "SteamSDK source tree with steam/, lib/ and bin/; empty fetches the pinned commit")
+set(STEAMSDK_SOURCE_PATH "$ENV{STEAMSDK_SOURCE_PATH}" CACHE PATH "SteamSDK header source tree; empty fetches the pinned commit")
 set(VC_LTL_Root "$ENV{VC_LTL_Root}" CACHE PATH "Existing VC-LTL binary package; empty downloads the verified package")
 
 function(utilhttpclientsteamapi_require_files name source)
@@ -32,7 +32,7 @@ function(utilhttpclientsteamapi_prepare_dependencies)
             https://github.com/MetaHookSv/SteamSDK
             3c1abaf6277f9f99fd16ef40557d6852820b848f steam_sdk)
     endif()
-    foreach(required steam/steam_api.h lib/steam_api.lib bin/steam_api.dll STEAM-SDK-NOTICE.md)
+    foreach(required steam/steam_api.h STEAM-SDK-NOTICE.md)
         if(NOT EXISTS "${steam_sdk}/${required}")
             message(FATAL_ERROR "SteamSDK is missing ${required}: ${steam_sdk}. Set STEAMSDK_SOURCE_PATH or check the pinned commit.")
         endif()
