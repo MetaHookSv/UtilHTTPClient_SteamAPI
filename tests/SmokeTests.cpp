@@ -118,6 +118,12 @@ void TestUrl(CreateInterfaceFn createInterface)
         {"https://example.test/path?key=value", "https", "example.test", 443, "/path?key=value", true},
         {"http://example.test:8080/path", "http", "example.test", 8080, "/path", false},
         {"http://example.test:65535/", "http", "example.test", 65535, "/", false},
+        {"https://example.test:443/path", "https", "example.test", 443, "/path", true},
+        {"HTTPS://example.test:8443/path", "https", "example.test", 8443, "/path", true},
+        {"HTTPS://example.test/path", "https", "example.test", 443, "/path", true},
+        {"https://example.test?x=1#private", "https", "example.test", 443, "/?x=1", true},
+        {"https://example.test/path#private", "https", "example.test", 443, "/path", true},
+        {"http://[::1]:8080/", "http", "[::1]", 8080, "/", false},
         {"ws://example.test/socket", "ws", "example.test", 80, "/socket", false},
         {"wss://example.test/socket", "wss", "example.test", 443, "/socket", true},
         {"mqtt://example.test/topic", "mqtt", "example.test", 1883, "/topic", false},
@@ -135,7 +141,8 @@ void TestUrl(CreateInterfaceFn createInterface)
         ExpectEqual(test.secure, result->IsSecure(), "Secure flag mismatch");
     }
     for (const char* url : {"", "example.test", "ftp://example.test/", "http:///path",
-        "http://example.test:65536/", "http://example.test:999999999999999999999/", "http://example.test:abc/"})
+        "http://example.test:65536/", "http://example.test:999999999999999999999/", "http://example.test:abc/",
+        "http://example.test:0/", "http://user@example.test/", "http://example.test/a b", "http://example.test/\r\nX-Test:1"})
     {
         Owned<IURLParsedResult> result(factory->ParseUrl(url));
         ExpectEqual(nullptr, result.get(), "Invalid URL was accepted");

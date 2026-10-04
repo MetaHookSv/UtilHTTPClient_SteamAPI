@@ -60,7 +60,7 @@ if(BUILD_TESTING)
         set_tests_properties(${scenario} PROPERTIES TIMEOUT 30)
     endforeach()
     get_target_property(bridge_source SteamAPIBridge SOURCE_DIR)
-    add_library(UtilHTTPBridgeMock SHARED "${bridge_source}/tests/MockRuntime.cpp" "${bridge_source}/tests/Modern.def")
+    add_library(UtilHTTPBridgeMock SHARED tests/HTTPRuntime.cpp "${bridge_source}/tests/Modern.def")
     target_include_directories(UtilHTTPBridgeMock PRIVATE "${STEAMSDK_SOURCE_PATH}" "${bridge_source}/src")
     target_compile_features(UtilHTTPBridgeMock PRIVATE cxx_std_20)
     set_target_properties(UtilHTTPBridgeMock PROPERTIES OUTPUT_NAME steam_api

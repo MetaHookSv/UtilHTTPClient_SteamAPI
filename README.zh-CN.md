@@ -23,6 +23,16 @@
 `steam_api.dll`，不替换该文件。新版运行库和旧 SteamClient012 路径都请求 HTTP003；
 HTTP 不可用或请求设置、发送失败时，请求以错误结束，不会永久等待。
 
+请求接受 HTTP/HTTPS URL，显式端口不会改变 TLS 设置，URL fragment 不参与请求。
+默认 User-Agent 由 Steam 提供；通过 `SetField` 设置 `User-Agent` 会被 Steam 拒绝，
+请求准备阶段因此失败。正文提取失败也会以错误结束；流式响应头可在
+`Responding` 通知中读取。
+
+一个请求只能归属一个池，重复加入会被忽略。调用 `Destroy()`（包括在请求回调中）
+会先解除池归属，再回收对象。池清理在锁外调用消费者析构回调。
+client/request 操作与 Steam 回调泵应在同一所属线程执行；保持请求存活时，
+另一线程可以等待同步结果。请求池的 mutex 不表示支持任意并发访问请求对象。
+
 ## 构建
 
 需要 Windows、Visual Studio 2022 C++ x86 工具和 Windows SDK、CMake 3.21 以上及 Git。

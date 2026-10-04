@@ -7,6 +7,7 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <mutex>
 #include <unordered_map>
 #include <cctype>
@@ -97,10 +98,16 @@ private:
 	bool m_secure{};
 };
 
-IURLParsedResult* ParseUrlInternal(const std::string& url)
+IURLParsedResult* ParseUrlInternal(const char* input)
 {
-	std::regex url_regex(
-		R"((http|https|ws|wss|mqtt|mqtts)://([^/:]+)(?::(\d+))?(/.*)?)",
+	if (!input)
+		return nullptr;
+	const std::string url(input);
+	for (unsigned char ch : url)
+		if (ch <= 0x20 || ch == 0x7f || ch == '\\')
+			return nullptr;
+	static const std::regex url_regex(
+		R"((http|https|ws|wss|mqtt|mqtts)://(\[[0-9a-f:.]+\]|[^/:?#@\[\]]+)(?::(\d+))?([^#]*)(?:#.*)?)",
 		std::regex_constants::icase
 	);
 
@@ -111,18 +118,24 @@ IURLParsedResult* ParseUrlInternal(const std::string& url)
 		if (url_match_result.size() >= 4) {
 			// Extract the matched groups
 			std::string scheme = url_match_result[1].str();
+			for (auto& ch : scheme)
+				ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 			std::string host = url_match_result[2].str();
 			std::string port_str = url_match_result[3].str();
 			std::string target = (url_match_result.size() >= 5) ? url_match_result[4].str() : "";
+			if (!target.empty() && target.front() == '?')
+				target.insert(target.begin(), '/');
+			if (!target.empty() && target.front() != '/')
+				return nullptr;
 
 			unsigned port_us = 0;
-			bool secure = false;
+			bool secure = scheme == "https" || scheme == "wss" || scheme == "mqtts";
 
 			if (!port_str.empty()) {
 				try {
 					size_t pos;
 					int port = std::stoi(port_str, &pos);
-					if (pos != port_str.size() || port < 0 || port > 65535) {
+					if (pos != port_str.size() || port <= 0 || port > 65535) {
 						return nullptr;
 					}
 					port_us = static_cast<unsigned short>(port);
@@ -175,6 +188,12 @@ static std::string ToLowerCase(const char* str)
 	return result;
 }
 
+static bool IsHTTPURL(const IURLParsedResult* result)
+{
+	const std::string_view scheme(result->GetScheme());
+	return scheme == "http" || scheme == "https";
+}
+
 class CUtilHTTPPayload : public IUtilHTTPPayload
 {
 private:
@@ -198,12 +217,14 @@ public:
 
 	bool ReadPayloadFromRequestHandle(HTTPRequestHandle handle)
 	{
+		m_payload.clear();
 		uint32_t responseSize = 0;
 		if (SteamBridge_HTTPGetBodySize(m_Bridge, handle, &responseSize) == SB_OK)
 		{
-			m_payload.resize(responseSize);
-			if (SteamBridge_HTTPGetBody(m_Bridge, handle, m_payload.data(), responseSize) == SB_OK)
+			std::string payload(responseSize, '\0');
+			if (SteamBridge_HTTPGetBody(m_Bridge, handle, payload.data(), responseSize) == SB_OK)
 			{
+				m_payload.swap(payload);
 				return true;
 			}
 		}
@@ -231,6 +252,7 @@ private:
 	HTTPRequestHandle m_RequestHandle{ INVALID_HTTPREQUEST_HANDLE  };
 
 public:
+	void SetRequestHandle(HTTPRequestHandle handle) { m_RequestHandle = handle; }
 
 	void SetStreamPayload(bool bIsStreamPayload)
 	{
@@ -264,7 +286,7 @@ public:
 
 		if (pResult->m_bRequestSuccessful && !bHasError && !m_bIsStreamPayload)
 		{
-			m_pResponsePayload->ReadPayloadFromRequestHandle(pResult->m_hRequest);
+			m_bResponseError = !m_pResponsePayload->ReadPayloadFromRequestHandle(pResult->m_hRequest);
 		}
 	}
 
@@ -344,10 +366,18 @@ public:
 	}
 };
 
+struct RequestPool
+{
+	std::mutex mutex;
+	std::unordered_map<UtilHTTPRequestId_t, IUtilHTTPRequest*> requests;
+};
+
 class CUtilHTTPRequest : public IUtilHTTPRequest
 {
 protected:
 	BridgeContext m_Bridge;
+	std::weak_ptr<RequestPool> m_Pool;
+	UtilHTTPRequestId_t m_PoolId{};
 	bool m_bSetupFailed{};
 	unsigned m_DispatchDepth{};
 	bool m_DestroyPending{};
@@ -393,7 +423,7 @@ public:
 			field_host = std::format("{0}:{1}", host, port);
 		}
 
-		std::string url = std::format("{0}://{1}{2}", secure ? "https" :"http", field_host, target);
+		std::string url = std::format("{0}://{1}{2}", secure ? "https" :"http", field_host, target.empty() ? "/" : target);
 
 		if (SteamBridge_HTTPCreate(m_Bridge.get(), UTIL_ConvertUtilHTTPMethodToSteamHTTPMethod(method), url.c_str(), &m_RequestHandle) != SB_OK)
 			m_bSetupFailed = true;
@@ -403,7 +433,6 @@ public:
 				m_bSetupFailed = true;
 
 		SetField("Host", field_host.c_str());
-		SetField("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.105 Safari/537.36");
 	}
 
 	virtual ~CUtilHTTPRequest()
@@ -453,6 +482,7 @@ public:
 
 	virtual void OnSteamHTTPHeaderReceived(HTTPRequestHeadersReceived_t* pResult, bool bHasError)
 	{
+		m_pResponse->SetRequestHandle(pResult->m_hRequest);
 		OnRespondStart();
 	}
 
@@ -463,6 +493,7 @@ public:
 		m_bRequestSuccessful = pResult->m_bRequestSuccessful && !bHasError;
 
 		m_pResponse->OnSteamHTTPCompleted(pResult, bHasError);
+		m_bRequestSuccessful = m_bRequestSuccessful && !m_pResponse->IsResponseError();
 
 		OnRespondFinish();
 		if (m_Callbacks)
@@ -500,12 +531,29 @@ public:
 	}
 
 public:
+	bool AttachToPool(const std::shared_ptr<RequestPool>& pool, UtilHTTPRequestId_t id)
+	{
+		if (!m_Pool.expired() || m_DestroyPending)
+			return false;
+		m_Pool = pool;
+		m_PoolId = id;
+		return true;
+	}
 
 	void Destroy() override
 	{
-		if (m_DispatchDepth)
-			m_DestroyPending = true;
-		else
+		if (m_DestroyPending)
+			return;
+		m_DestroyPending = true;
+		if (auto pool = m_Pool.lock())
+		{
+			std::lock_guard<std::mutex> lock(pool->mutex);
+			auto it = pool->requests.find(m_PoolId);
+			if (it != pool->requests.end() && it->second == this)
+				pool->requests.erase(it);
+			m_Pool.reset();
+		}
+		if (!m_DispatchDepth)
 			delete this;
 	}
 
@@ -744,7 +792,7 @@ public:
 
 	void OnSteamHTTPHeaderReceived(HTTPRequestHeadersReceived_t* pResult, bool bHasError) override
 	{
-		OnRespondStart();
+		CUtilHTTPRequest::OnSteamHTTPHeaderReceived(pResult, bHasError);
 	}
 
 	void OnSteamHTTPDataReceived(HTTPRequestDataReceived_t* pResult, bool bHasError) override
@@ -775,9 +823,8 @@ class CUtilHTTPClient : public IUtilHTTPClient
 private:
 	BridgeContext m_Bridge{ SteamBridge_CreateContext(), SteamBridge_DestroyContext };
 	bool m_bCookieFailed{};
-	std::mutex m_RequestHandleLock;
+	std::shared_ptr<RequestPool> m_Pool{ std::make_shared<RequestPool>() };
 	UtilHTTPRequestId_t m_RequestUsedId{ UTILHTTP_REQUEST_START_ID };
-	std::unordered_map<UtilHTTPRequestId_t, IUtilHTTPRequest*> m_RequestPool;
 	HTTPCookieContainerHandle m_CookieHandle{ INVALID_HTTPCOOKIE_HANDLE  };
 
 public:
@@ -811,35 +858,45 @@ public:
 
 	void Shutdown() override
 	{
-		decltype(m_RequestPool) requests;
+		auto pool = m_Pool;
+		for (;;)
 		{
-			std::lock_guard<std::mutex> lock(m_RequestHandleLock);
-			requests.swap(m_RequestPool);
-		}
-		for (auto& [id, request] : requests)
-		{
+			IUtilHTTPRequest* request{};
+			{
+				std::lock_guard<std::mutex> lock(pool->mutex);
+				if (pool->requests.empty())
+					break;
+				auto it = pool->requests.begin();
+				request = it->second;
+				pool->requests.erase(it);
+			}
 			request->Destroy();
 		}
 	}
 
 	void RunFrame() override
 	{
-		std::lock_guard<std::mutex> lock(m_RequestHandleLock);
-
-		for (auto itor = m_RequestPool.begin(); itor != m_RequestPool.end();)
+		// Remove one request before destruction. A consumer destructor may reenter
+		// the client and destroy other requests, so do not retain a pointer batch.
+		auto pool = m_Pool;
+		for (;;)
 		{
-			auto RequestInstance = (*itor).second;
-
-			if (RequestInstance->IsFinished() && RequestInstance->IsAutoDestroyOnFinish())
+			IUtilHTTPRequest* finished{};
 			{
-				RequestInstance->Destroy();
-
-				itor = m_RequestPool.erase(itor);
-
-				continue;
+				std::lock_guard<std::mutex> lock(pool->mutex);
+				for (auto it = pool->requests.begin(); it != pool->requests.end(); ++it)
+				{
+					if (it->second->IsFinished() && it->second->IsAutoDestroyOnFinish())
+					{
+						finished = it->second;
+						pool->requests.erase(it);
+						break;
+					}
+				}
 			}
-
-			itor++;
+			if (!finished)
+				break;
+			finished->Destroy();
 		}
 	}
 
@@ -867,6 +924,8 @@ public:
 
 		SCOPE_EXIT{ result->Destroy(); };
 
+		if (!IsHTTPURL(result))
+			return nullptr;
 		return CreateSyncRequestEx(result->GetHost(), result->GetPort(), result->GetTarget(), result->IsSecure(), method, callbacks);
 	}
 
@@ -879,6 +938,8 @@ public:
 
 		SCOPE_EXIT{ result->Destroy(); };
 
+		if (!IsHTTPURL(result))
+			return nullptr;
 		return CreateAsyncRequestEx(result->GetHost(), result->GetPort(), result->GetTarget(), result->IsSecure(), method, callbacks);
 	}
 
@@ -896,32 +957,44 @@ public:
 
 		SCOPE_EXIT{ result->Destroy(); };
 
+		if (!IsHTTPURL(result))
+			return nullptr;
 		return CreateAsyncStreamRequestEx(result->GetHost(), result->GetPort(), result->GetTarget(), result->IsSecure(), method, callbacks);
 	}
 
 	void AddToRequestPool(IUtilHTTPRequest* RequestInstance) override
 	{
-		std::lock_guard<std::mutex> lock(m_RequestHandleLock);
+		auto request = dynamic_cast<CUtilHTTPRequest*>(RequestInstance);
+		if (!request)
+			return;
+		std::lock_guard<std::mutex> lock(m_Pool->mutex);
 
 		if (m_RequestUsedId == UTILHTTP_REQUEST_MAX_ID)
 			m_RequestUsedId = UTILHTTP_REQUEST_START_ID;
 
+		while (m_Pool->requests.contains(m_RequestUsedId))
+		{
+			if (++m_RequestUsedId == UTILHTTP_REQUEST_MAX_ID)
+				m_RequestUsedId = UTILHTTP_REQUEST_START_ID;
+		}
 		auto RequestId = m_RequestUsedId;
+		if (!request->AttachToPool(m_Pool, RequestId))
+			return;
 
 		RequestInstance->SetRequestId(RequestId);
 
-		m_RequestPool[RequestId] = RequestInstance;
+		m_Pool->requests[RequestId] = RequestInstance;
 
 		m_RequestUsedId++;
 	}
 
 	IUtilHTTPRequest* GetRequestById(UtilHTTPRequestId_t id) override
 	{
-		std::lock_guard<std::mutex> lock(m_RequestHandleLock);
+		std::lock_guard<std::mutex> lock(m_Pool->mutex);
 
-		auto itor = m_RequestPool.find(id);
+		auto itor = m_Pool->requests.find(id);
 
-		if (itor != m_RequestPool.end())
+		if (itor != m_Pool->requests.end())
 		{
 			return itor->second;
 		}
@@ -931,22 +1004,17 @@ public:
 
 	bool DestroyRequestById(UtilHTTPRequestId_t id) override
 	{
-		std::lock_guard<std::mutex> lock(m_RequestHandleLock);
-
-		auto itor = m_RequestPool.find(id);
-
-		if (itor != m_RequestPool.end())
+		IUtilHTTPRequest* request{};
 		{
-			auto pRequest = itor->second;
-
-			m_RequestPool.erase(itor);
-
-			pRequest->Destroy();
-
-			return true;
+			std::lock_guard<std::mutex> lock(m_Pool->mutex);
+			auto it = m_Pool->requests.find(id);
+			if (it == m_Pool->requests.end())
+				return false;
+			request = it->second;
+			m_Pool->requests.erase(it);
 		}
-
-		return false;
+		request->Destroy();
+		return true;
 	}
 
 	bool SetCookie(const char* host, const char* url, const char* cookie) override

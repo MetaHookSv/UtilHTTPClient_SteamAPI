@@ -59,7 +59,7 @@ flowchart TD
   I --> J{Send}
   J -->|standard| K[SteamHTTP SendHTTPRequest]
   J -->|stream| L[SteamHTTP SendHTTPRequestAndStreamResponse]
-  K --> M[HTTPRequestHeadersReceived_t -> Responding]
+  L --> M[HTTPRequestHeadersReceived_t -> Responding]
   K --> N[HTTPRequestCompleted_t -> OnSteamHTTPCompleted]
   L --> O[HTTPRequestDataReceived_t -> OnReceiveData]
   O --> N
@@ -92,8 +92,8 @@ Behaviour worth knowing:
 - `Send()` uses SteamAPIBridge. Streaming headers/data are ordinary callbacks filtered by
   request handle; completion is a call result. Immediate setup/send errors finish the request
   and wake synchronous waiters. Completion does not require a preceding header callback.
-- The default `User-Agent` is a hard-coded Chrome UA; servers with UA-dependent policies need
-  `SetField`.
+- Steam supplies the default `User-Agent`. Steam rejects that header through its ordinary
+  header setter; the client must not set it by default.
 - Certificate verification is configurable per request (`SetRequireCertVerification`), and header,
   body and timeout configuration map onto the Steam HTTP setters.
 
@@ -188,6 +188,24 @@ Nothing is deployed into a game automatically.
   compatibility of callers is independent.
 
 ## External documentation
+
+### HTTP and lifetime review (2026-10-04)
+
+- Trigger: explicit-port HTTPS became HTTP; pooled self-destruction left stale pointers;
+  consumer destructors reentered the pool lock; body/header edge cases were untested.
+- Root causes: TLS was inferred only in the default-port branch, ownership was tracked only
+  by raw pool pointers, and pool cleanup invoked consumer code while holding its mutex.
+  Steam's ordinary header setter rejects User-Agent, unlike the original permissive mock.
+- Correct approach: normalize scheme independently of port, separate query/fragment, reject
+  non-HTTP schemes at request creation, let Steam supply its UA, detach requests before
+  deferred deletion and destroy outside the pool lock. Treat body extraction failures as
+  terminal failures and bind the response handle before streaming header notification.
+- Verification: the HTTP-specific fixture rejects User-Agent and injects body size/data
+  failures. Public DLL tests cover completion, wait notification, pooled self-destruction,
+  duplicate insertion, cleanup reentry, streaming header access and URL boundaries.
+- Scope: this backend's existing _007 ABI. Client/request operations and callback dispatch
+  belong on one owner thread; synchronous waiting on another thread requires the request to
+  remain alive. These changes do not provide arbitrary concurrent lifetime safety.
 
 `README.md` is the English landing page and `README.zh-CN.md` the Chinese one; both cover the quick
 start, the build overrides and the backend limitation. Dependency terms are documented in the

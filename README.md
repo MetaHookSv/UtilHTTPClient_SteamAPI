@@ -26,6 +26,19 @@ initialize Steamworks and keep dispatching Steam callbacks. Its existing
 both modern runtimes and legacy SteamClient012 runtimes; unavailable HTTP or failed
 request setup/send completes the request with an error instead of waiting forever.
 
+Requests accept HTTP/HTTPS URLs, preserve TLS with explicit ports, and omit URL
+fragments. Steam supplies the default User-Agent; setting `User-Agent` through
+`SetField` is rejected by Steam and fails request setup. Body extraction failures
+also finish with an error. Streaming response headers are readable in the
+`Responding` notification.
+
+An added request belongs to one pool; repeated additions are ignored. Calling
+`Destroy()` (including from a request callback) removes it from its pool before
+reclamation. Pool cleanup invokes consumer destructors without holding the pool
+lock. Use client/request operations and the Steam callback pump on the same owner
+thread; a separate thread may wait for a synchronous result while its request is
+kept alive. The pool mutex does not make arbitrary concurrent request use safe.
+
 ## Build
 
 Windows with Visual Studio 2022 C++ x86 tools and the Windows SDK, CMake 3.21 or newer
