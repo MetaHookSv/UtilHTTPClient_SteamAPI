@@ -8,31 +8,21 @@ This file provides guidance and important rules working with code in this reposi
   information in the Basic Memory knowledge base first, and only locate/read specific files or
   symbols when necessary, instead of expanding a large amount of context at once.
 
-#### Basic Memory knowledge base (project-scoped, `memory/`)
+### Basic Memory knowledge base (project-scoped, `memory/`)
 
 - Notes live in `memory/` (markdown with YAML frontmatter: `title`/`type`/`permalink`), tracked in git.
-- This repository contains the standalone UtilHTTPClient_SteamAPI library, extracted from MetaHookSv
-  `PluginLibs/UtilHTTPClient_SteamAPI` (the migrated note is titled "UtilHTTPClient_Steam"). See
-  `memory/project_overview.md` for scope and provenance.
-- Basic Memory is registered as MCP server `basic-memory`, pinned to the `utilhttpclient-steamapi`
-  project (project-level `.mcp.json`, mirrored by `.codex/config.toml`). The `metahooksv` project
-  belongs to the source repository.
 - Prefer Basic Memory MCP tools (`search_notes` / `read_note` / `write_note` / `edit_note`) only when
   their project resolves to this repository's `memory/` directory. Verify the project binding before
   writing; when no matching project is available, read and edit the local markdown files directly.
 - Notes use the `utilhttpclient-steamapi/` permalink prefix to distinguish them from the source
   repository.
-- Historical records are not current evidence: the migrated note retains MetaHookSv paths
-  (`PluginLibs/UtilHTTPClient_SteamAPI/`, `.vcxproj` property names), while the current sources are
-  `src/<file>` and the build is CMake. Do not extend an old statement to a new change without
-  checking the code.
 
-#### High-level information in this repository (read corresponding notes first)
+### High-level information in this repository (read corresponding notes first)
 
 - Project overview, provenance, Steam request lifecycle, host requirements and backend limitation:
   `project_overview`
 
-#### When notes are insufficient: source entry points (query and read on demand)
+### When notes are insufficient: source entry points (query and read on demand)
 
 - Build: `CMakeLists.txt` (links the shared `SteamAPIBridge` target), `cmake/`,
   `scripts/build-UtilHTTPClient_SteamAPI-x86-{Debug,Release}.bat`
@@ -50,7 +40,7 @@ This file provides guidance and important rules working with code in this reposi
 - Build output: `build/x86/<configuration>/`; install output: `install/x86/<configuration>/`. Neither
   is tracked, and nothing is deployed into a game
 
-#### Progressive disclosure key points
+### Progressive disclosure key points
 
 - Read notes first, then locate a single file/symbol; do not read the whole repository at once.
 - Prefer correctly scoped Basic Memory MCP tools for knowledge retrieval; otherwise use the local
@@ -75,8 +65,3 @@ This file provides guidance and important rules working with code in this reposi
   and install. Keep tests focused on public behavior and DLL integration.
 - Build, install and dependency-cache directories are ignored. Do not commit, push or publish
   without authorization.
-
-## Explore SKILLs
-
-- Project-level skills, when present, live in `.claude/skills` no matter what harness tool is being
-  used.
