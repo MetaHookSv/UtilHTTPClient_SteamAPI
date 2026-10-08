@@ -9,7 +9,7 @@
 
 namespace
 {
-template<typename Expected, typename Actual>
+template <typename Expected, typename Actual>
 void ExpectEqual(const Expected& expected, const Actual& actual, const char* message)
 {
     if (!(expected == actual))
@@ -26,7 +26,7 @@ public:
     }
 
     ~Module() { FreeLibrary(m_handle); }
-    Module(const Module&) = delete;
+    Module(const Module&)            = delete;
     Module& operator=(const Module&) = delete;
 
     CreateInterfaceFn GetFactory() const
@@ -43,16 +43,16 @@ private:
 
 struct DestroyObject
 {
-    template<typename T>
+    template <typename T>
     void operator()(T* object) const { object->Destroy(); }
 };
 
-template<typename T>
+template <typename T>
 using Owned = std::unique_ptr<T, DestroyObject>;
 
 IUtilHTTPClientFactory* GetClientFactory(CreateInterfaceFn createInterface)
 {
-    int result = IFACE_FAILED;
+    int  result  = IFACE_FAILED;
     auto factory = static_cast<IUtilHTTPClientFactory*>(
         createInterface(UTIL_HTTPCLIENT_FACTORY_STEAMAPI_INTERFACE_VERSION, &result));
     ExpectEqual(IFACE_OK, result, "Factory interface lookup failed");
@@ -65,7 +65,7 @@ void TestFactory(CreateInterfaceFn createInterface)
     auto factory = GetClientFactory(createInterface);
     ExpectEqual(factory, GetClientFactory(createInterface), "Factory must be a singleton");
     ExpectEqual(factory, createInterface(UTIL_HTTPCLIENT_FACTORY_STEAMAPI_INTERFACE_VERSION, nullptr),
-        "Factory lookup without a return code failed");
+                "Factory lookup without a return code failed");
 
     int result = IFACE_OK;
     ExpectEqual(nullptr, createInterface("UnknownInterface_999", &result), "Unknown interface must be rejected");
@@ -81,7 +81,7 @@ void TestFactory(CreateInterfaceFn createInterface)
 
 void TestClient(CreateInterfaceFn createInterface)
 {
-    auto factory = GetClientFactory(createInterface);
+    auto                   factory = GetClientFactory(createInterface);
     Owned<IUtilHTTPClient> first(factory->CreateUtilHTTPClient());
     Owned<IUtilHTTPClient> second(factory->CreateUtilHTTPClient());
     ExpectEqual(true, first != nullptr && second != nullptr, "Client creation failed");
@@ -106,12 +106,12 @@ void TestUrl(CreateInterfaceFn createInterface)
     auto factory = GetClientFactory(createInterface);
     struct UrlCase
     {
-        const char* url;
-        const char* scheme;
-        const char* host;
+        const char*    url;
+        const char*    scheme;
+        const char*    host;
         unsigned short port;
-        const char* target;
-        bool secure;
+        const char*    target;
+        bool           secure;
     };
     const UrlCase cases[] = {
         {"http://example.test", "http", "example.test", 80, "", false},
@@ -127,8 +127,7 @@ void TestUrl(CreateInterfaceFn createInterface)
         {"ws://example.test/socket", "ws", "example.test", 80, "/socket", false},
         {"wss://example.test/socket", "wss", "example.test", 443, "/socket", true},
         {"mqtt://example.test/topic", "mqtt", "example.test", 1883, "/topic", false},
-        {"mqtts://example.test/topic", "mqtts", "example.test", 8883, "/topic", true}
-    };
+        {"mqtts://example.test/topic", "mqtts", "example.test", 8883, "/topic", true}};
     for (const auto& test : cases)
     {
         Owned<IURLParsedResult> result(factory->ParseUrl(test.url));
@@ -141,14 +140,14 @@ void TestUrl(CreateInterfaceFn createInterface)
         ExpectEqual(test.secure, result->IsSecure(), "Secure flag mismatch");
     }
     for (const char* url : {"", "example.test", "ftp://example.test/", "http:///path",
-        "http://example.test:65536/", "http://example.test:999999999999999999999/", "http://example.test:abc/",
-        "http://example.test:0/", "http://user@example.test/", "http://example.test/a b", "http://example.test/\r\nX-Test:1"})
+                            "http://example.test:65536/", "http://example.test:999999999999999999999/", "http://example.test:abc/",
+                            "http://example.test:0/", "http://user@example.test/", "http://example.test/a b", "http://example.test/\r\nX-Test:1"})
     {
         Owned<IURLParsedResult> result(factory->ParseUrl(url));
         ExpectEqual(nullptr, result.get(), "Invalid URL was accepted");
     }
 }
-}
+} // namespace
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -156,14 +155,17 @@ int wmain(int argc, wchar_t* argv[])
     {
         if (argc != 4)
             throw std::runtime_error("Usage: SmokeTests <client DLL> <Steam DLL> <Factory|Client|Url>");
-        Module steam(argv[2]);
-        Module client(argv[1]);
-        auto createInterface = client.GetFactory();
+        Module                  steam(argv[2]);
+        Module                  client(argv[1]);
+        auto                    createInterface = client.GetFactory();
         const std::wstring_view scenario(argv[3]);
         if (scenario == L"Factory") TestFactory(createInterface);
-        else if (scenario == L"Client") TestClient(createInterface);
-        else if (scenario == L"Url") TestUrl(createInterface);
-        else throw std::runtime_error("Unknown test scenario");
+        else if (scenario == L"Client")
+            TestClient(createInterface);
+        else if (scenario == L"Url")
+            TestUrl(createInterface);
+        else
+            throw std::runtime_error("Unknown test scenario");
         std::cout << "PASS\n";
         return 0;
     }
