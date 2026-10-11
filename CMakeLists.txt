@@ -35,9 +35,11 @@ target_compile_definitions(utilhttpclientsteamapi_settings INTERFACE
     $<$<CONFIG:Debug>:_DEBUG> $<$<CONFIG:Release>:NDEBUG>)
 target_compile_options(utilhttpclientsteamapi_settings INTERFACE /W3 /permissive- /wd4819 /Zi)
 
+include(cmake/SourceGroups.cmake)
 add_library(UtilHTTPClient_SteamAPI SHARED
     src/UtilHTTPClient_SteamAPI.cpp src/dllmain.cpp
     "${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp")
+utilhttpclientsteamapi_assign_source_groups(UtilHTTPClient_SteamAPI)
 target_link_libraries(UtilHTTPClient_SteamAPI PRIVATE utilhttpclientsteamapi_settings SteamAPIBridge)
 target_include_directories(UtilHTTPClient_SteamAPI PRIVATE "${SCOPEEXIT_SOURCE_PATH}/include" "${STEAMSDK_SOURCE_PATH}")
 target_compile_definitions(UtilHTTPClient_SteamAPI PRIVATE UTILHTTPCLIENT_STEAMAPI_EXPORTS _USRDLL)
