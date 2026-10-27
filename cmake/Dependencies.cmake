@@ -1,8 +1,6 @@
-set(UTILHTTPCLIENT_STEAMAPI_DEPENDENCY_CACHE_DIR "${PROJECT_SOURCE_DIR}/thirdparty/cache" CACHE PATH "Downloaded binary dependency cache")
 set(METAHOOK_SOURCE_PATH "$ENV{METAHOOK_SOURCE_PATH}" CACHE PATH "MetaHook source tree; empty fetches the pinned SDK")
 set(SCOPEEXIT_SOURCE_PATH "$ENV{SCOPEEXIT_SOURCE_PATH}" CACHE PATH "ScopeExit source tree; empty fetches the pinned commit")
 set(STEAMSDK_SOURCE_PATH "$ENV{STEAMSDK_SOURCE_PATH}" CACHE PATH "SteamSDK header source tree; empty fetches the pinned commit")
-set(VC_LTL_Root "$ENV{VC_LTL_Root}" CACHE PATH "Existing VC-LTL binary package; empty downloads the verified package")
 
 function(utilhttpclientsteamapi_require_files name source)
     foreach(required IN LISTS ARGN)
@@ -41,8 +39,6 @@ function(utilhttpclientsteamapi_prepare_dependencies)
     message(STATUS "STEAMSDK_SOURCE_PATH: ${steam_sdk}")
     set(metahook_files include/HLSDK/common/interface.h include/HLSDK/common/interface.cpp LICENSE)
     set(scopeexit_files include/ScopeExit/ScopeExit.h LICENSE)
-    set(vcltl_files "VC-LTL helper for cmake.cmake" config/config.cmake
-        TargetPlatform/6.0.6000.0/lib/Win32/libucrt.lib Readme.md)
 
     # Validate explicit paths before downloads. External directories are read-only.
     foreach(dependency METAHOOK SCOPEEXIT)
@@ -53,10 +49,6 @@ function(utilhttpclientsteamapi_prepare_dependencies)
             set(${dependency}_SOURCE_PATH "${source}")
         endif()
     endforeach()
-    if(VC_LTL_Root)
-        get_filename_component(VC_LTL_Root "${VC_LTL_Root}" ABSOLUTE BASE_DIR "${PROJECT_SOURCE_DIR}")
-        utilhttpclientsteamapi_require_files(VC_LTL_Root "${VC_LTL_Root}" ${vcltl_files})
-    endif()
 
     if(NOT METAHOOK_SOURCE_PATH)
         utilhttpclientsteamapi_fetch_source(utilhttpclientsteamapi_metahook
@@ -74,13 +66,4 @@ function(utilhttpclientsteamapi_prepare_dependencies)
         set(${dependency}_SOURCE_PATH "${${dependency}_SOURCE_PATH}" PARENT_SCOPE)
         message(STATUS "${dependency}_SOURCE_PATH: ${${dependency}_SOURCE_PATH}")
     endforeach()
-
-    if(NOT VC_LTL_Root)
-        include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/VCLTL.cmake")
-        set(VC_LTL_Root "${UTILHTTPCLIENT_STEAMAPI_DEPENDENCY_CACHE_DIR}/VC-LTL-5.3.1")
-        utilhttpclientsteamapi_prepare_vcltl()
-    endif()
-    utilhttpclientsteamapi_require_files(VC_LTL_Root "${VC_LTL_Root}" ${vcltl_files})
-    set(VC_LTL_Root "${VC_LTL_Root}" PARENT_SCOPE)
-    message(STATUS "VC_LTL_Root: ${VC_LTL_Root}")
 endfunction()

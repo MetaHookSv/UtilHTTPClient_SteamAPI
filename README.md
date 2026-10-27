@@ -6,7 +6,7 @@ UtilHTTPClient_SteamAPI is a standalone Steamworks HTTP client. It implements th
 `IUtilHTTPClient` API on top of Steamworks and provides synchronous, asynchronous and
 streaming requests to the host application.
 
-* Windows x86 only, built with Visual Studio 2022, C++20 and VC-LTL 5.3.1.
+* Windows x86 only, built with Visual Studio 2022, C++20.
 * Exports `CreateInterface`, plus the `UtilHTTPClient_SteamAPI_007` and
   `UtilHTTPClientFactory_SteamAPI_007` interfaces.
 * `SetFollowLocation()` is unsupported by this backend.
@@ -42,7 +42,7 @@ kept alive. The pool mutex does not make arbitrary concurrent request use safe.
 ## Build
 
 Windows with Visual Studio 2022 C++ x86 tools and the Windows SDK, CMake 3.21 or newer
-and Git. Debug and Release both use C++20, the static MSVC runtime and VC-LTL 5.3.1.
+and Git. Debug and Release both use C++20 and the static MSVC runtime.
 
 ```bat
 git clone --recurse-submodules https://github.com/MetaHookSv/UtilHTTPClient_SteamAPI
@@ -55,7 +55,7 @@ Each build script configures, builds, runs CTest and installs into
 use `-DBUILD_TESTING=OFF` for a library-only build. The first configure fetches
 SteamSDK headers, SteamAPIBridge, MetaHook SDK and ScopeExit at pinned commits;
 pass `-DSTEAMAPIBRIDGE_SOURCE_PATH=... -DSTEAMSDK_SOURCE_PATH=...`
-and `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -DVC_LTL_Root=...`
+and `-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=...`
 to reuse local copies for offline builds.
 
 ## License

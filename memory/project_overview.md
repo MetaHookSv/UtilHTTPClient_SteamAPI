@@ -106,8 +106,7 @@ Behaviour worth knowing:
 - **MetaHook SDK**: the interface base and factory macros; `include/HLSDK/common/interface.cpp` is
   compiled into this DLL, so no host launcher is built or required.
 - **ScopeExit**: header-only RAII.
-- **Build-only inputs, all read-only**: `METAHOOK_SOURCE_PATH`, `SCOPEEXIT_SOURCE_PATH` and
-  `VC_LTL_Root` (SHA-256-verified VC-LTL 5.3.1 in `thirdparty/cache`). C++20, static MSVC CRT,
+- **Build-only inputs, all read-only**: `METAHOOK_SOURCE_PATH`, `SCOPEEXIT_SOURCE_PATH`. C++20, static MSVC CRT,
   Windows x86 only.
 - **Runtime host requirements**: the host must have initialized Steamworks and must keep dispatching
   Steam callbacks (`SteamAPI_RunCallbacks()`). Install SteamAPIBridge next to the client DLL;
@@ -133,7 +132,7 @@ Behaviour worth knowing:
 installs into `install/x86/<Configuration>/`, stopping on failure; `BUILD_TESTING` defaults to `ON`
 (`-DBUILD_TESTING=OFF` for a library-only build). The first configure fetches SteamSDK,
 SteamAPIBridge, MetaHook SDK and ScopeExit at pinned commits unless their `*_SOURCE_PATH`
-overrides are supplied; `VC_LTL_Root` reuses the verified VC-LTL binary package.
+overrides are supplied.
 Install output is `install/x86/<Configuration>/`:
 
 ```text

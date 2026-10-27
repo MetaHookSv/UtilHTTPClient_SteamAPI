@@ -21,7 +21,6 @@ endif()
 
 include(cmake/Dependencies.cmake)
 utilhttpclientsteamapi_prepare_dependencies()
-include("${VC_LTL_Root}/VC-LTL helper for cmake.cmake")
 
 include(cmake/SteamAPIBridge.cmake)
 

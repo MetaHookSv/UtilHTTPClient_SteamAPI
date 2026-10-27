@@ -35,9 +35,9 @@ This file provides guidance and important rules working with code in this reposi
   `STEAMAPIBRIDGE_SOURCE_PATH` overrides the bridge's fixed FetchContent commit. No steam_api.lib link.
 - Tests: `tests/SmokeTests.cpp`, run by CTest (`BUILD_TESTING` defaults to `ON` in the scripts)
 - Docs: `README.md`, `README.zh-CN.md`; dependency terms live in the upstream repositories
-- External sources, all read-only inputs: `METAHOOK_SOURCE_PATH`, `SCOPEEXIT_SOURCE_PATH` and
-  `VC_LTL_Root`; pins are fetched only when the corresponding override is empty. The build uses
-  C++20, a static CRT and VC-LTL 5.3.1, for Windows x86 only
+- External sources, all read-only inputs: `METAHOOK_SOURCE_PATH`, `SCOPEEXIT_SOURCE_PATH`;
+  pins are fetched only when the corresponding override is empty. The build uses
+  C++20 and a static CRT, for Windows x86 only
 - Build output: `build/x86/<configuration>/`; install output: `install/x86/<configuration>/`. Neither
   is tracked, and nothing is deployed into a game
 

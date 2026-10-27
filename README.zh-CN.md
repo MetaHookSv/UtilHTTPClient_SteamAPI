@@ -5,7 +5,7 @@
 独立的 Steamworks HTTP 客户端，在 Steamworks 之上实现 `IUtilHTTPClient` API，
 为宿主提供同步、异步和流式请求。
 
-* 仅支持 Windows x86，使用 Visual Studio 2022、C++20 和 VC-LTL 5.3.1 构建。
+* 仅支持 Windows x86，使用 Visual Studio 2022、C++20 构建。
 * 导出 `CreateInterface`，以及 `UtilHTTPClient_SteamAPI_007` 和
   `UtilHTTPClientFactory_SteamAPI_007` 两个接口。
 * 此后端不支持 `SetFollowLocation()`。
@@ -36,7 +36,7 @@ client/request 操作与 Steam 回调泵应在同一所属线程执行；保持�
 ## 构建
 
 需要 Windows、Visual Studio 2022 C++ x86 工具和 Windows SDK、CMake 3.21 以上及 Git。
-Debug、Release 均使用 C++20、静态 MSVC 运行库及 VC-LTL 5.3.1。
+Debug、Release 均使用 C++20 及静态 MSVC 运行库。
 
 ```bat
 git clone --recurse-submodules https://github.com/MetaHookSv/UtilHTTPClient_SteamAPI
@@ -48,7 +48,7 @@ scripts\build-UtilHTTPClient_SteamAPI-x86-Release.bat
 失败立即退出。`BUILD_TESTING` 默认开启，`-DBUILD_TESTING=OFF` 可只构建库。
 首次配置按固定提交获取 SteamSDK 头文件、SteamAPIBridge、MetaHook SDK 和
 ScopeExit；可通过 `-DSTEAMAPIBRIDGE_SOURCE_PATH=... -DSTEAMSDK_SOURCE_PATH=...`，以及
-`-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=... -DVC_LTL_Root=...`
+`-DMETAHOOK_SOURCE_PATH=... -DSCOPEEXIT_SOURCE_PATH=...`
 复用本地副本进行离线构建。
 
 ## 许可证
