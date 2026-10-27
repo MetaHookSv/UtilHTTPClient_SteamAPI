@@ -124,7 +124,7 @@ Behaviour worth knowing:
 - `thirdparty/SteamSDK` — the Steamworks SDK submodule (`--recurse-submodules` on clone).
 - `scripts/build-UtilHTTPClient_SteamAPI-x86-{Debug,Release}.bat` — configure/build/test/install
   entry points.
-- `README.md`, `README.zh-CN.md`, `licenses/` — documentation and third-party terms.
+- `README.md`, `README.zh-CN.md` — documentation.
 
 ## Build and data flow
 
@@ -208,4 +208,4 @@ Nothing is deployed into a game automatically.
 
 `README.md` is the English landing page and `README.zh-CN.md` the Chinese one; both cover the quick
 start, the build overrides and the backend limitation. Dependency terms are documented in the
-upstream repositories and under `licenses/`.
+upstream repositories.
